@@ -1,0 +1,20 @@
+{
+  "name": "superbid-fullstack-backend",
+  "version": "1.0.0",
+  "private": true,
+  "description": "API Node.js + MongoDB para el liquidador Superbid.",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "decimal.js": "^10.6.0",
+    "dotenv": "^16.6.1",
+    "express": "^4.21.2",
+    "jsonwebtoken": "^9.0.2",
+    "mongoose": "^8.16.3",
+    "mysql2": "^3.23.1"
+  }
+}
