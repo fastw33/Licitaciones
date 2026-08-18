@@ -66,7 +66,12 @@ function normalizeLotItem(item) {
     tipoCalculo: safe.tipoCalculo === "kg" ? "kg" : "total",
     valorAdjudicado: normalizeNumber(safe.valorAdjudicado),
     valorBaseLote: normalizeNumber(safe.valorBaseLote),
+    depositoGarantia: normalizeNumber(safe.depositoGarantia),
     kilosEstimados: normalizeNumber(safe.kilosEstimados),
+    pesoUnitarioKg: normalizeNumber(safe.pesoUnitarioKg),
+    aprovechableModo: safe.aprovechableModo === "pct" ? "pct" : "kg",
+    aprovechableValor: normalizeNumber(safe.aprovechableValor),
+    precioVentaKg: normalizeNumber(safe.precioVentaKg),
     valorPorKilo: normalizeNumber(safe.valorPorKilo)
   };
 }
@@ -79,6 +84,13 @@ function normalizeBreakdownLot(item) {
     valorAdjudicado: normalizeNumber(safe.valorAdjudicado),
     valorBaseLote: normalizeNumber(safe.valorBaseLote),
     kilosEstimados: normalizeNumber(safe.kilosEstimados),
+    cantidadUnidades: normalizeNumber(safe.cantidadUnidades),
+    pesoUnitarioKg: normalizeNumber(safe.pesoUnitarioKg),
+    pesoTotalKg: normalizeNumber(safe.pesoTotalKg),
+    aprovechableModo: safe.aprovechableModo === "pct" ? "pct" : "kg",
+    aprovechableValor: normalizeNumber(safe.aprovechableValor),
+    aprovechableCantidad: normalizeNumber(safe.aprovechableCantidad),
+    precioVentaKg: normalizeNumber(safe.precioVentaKg),
     valorPorKilo: normalizeNumber(safe.valorPorKilo),
     prepago: normalizeNumber(safe.prepago),
     comisionBase: normalizeNumber(safe.comisionBase),
@@ -86,6 +98,89 @@ function normalizeBreakdownLot(item) {
     totalComision: normalizeNumber(safe.totalComision),
     tasaAdministrativa: normalizeNumber(safe.tasaAdministrativa),
     depositoGarantia: normalizeNumber(safe.depositoGarantia)
+  };
+}
+
+function normalizeAuctionSession(session) {
+  if (!session || typeof session !== "object") {
+    return null;
+  }
+  const normalizeSnapshot = (snapshot) => {
+    if (!snapshot || typeof snapshot !== "object") {
+      return null;
+    }
+    return {
+      kind: normalizeString(snapshot.kind),
+      at: normalizeString(snapshot.at),
+      bidder:
+        snapshot.bidder === "other"
+          ? "other"
+          : snapshot.bidder === "mine"
+            ? "mine"
+            : "",
+      bidMode: snapshot.bidMode === "kg" ? "kg" : "total",
+      bidLabel: normalizeString(snapshot.bidLabel) || "lote",
+      bidValue: normalizeNumber(snapshot.bidValue),
+      bidTotal: normalizeNumber(snapshot.bidTotal),
+      maxBidValue: normalizeNumber(snapshot.maxBidValue),
+      maxBidTotal: normalizeNumber(snapshot.maxBidTotal),
+      frozenDeposit: normalizeNumber(snapshot.frozenDeposit),
+      costPerUnit: normalizeNumber(snapshot.costPerUnit),
+      utilityPct: normalizeNumber(snapshot.utilityPct),
+      utilityKg: normalizeNumber(snapshot.utilityKg),
+      utilityTotal: normalizeNumber(snapshot.utilityTotal),
+      cashWithoutDeposit: normalizeNumber(snapshot.cashWithoutDeposit),
+      totalWithDeposit: normalizeNumber(snapshot.totalWithDeposit),
+      status: normalizeString(snapshot.status)
+    };
+  };
+  const safeBids = Array.isArray(session.bids) ? session.bids : [];
+  const safeSensitivity = Array.isArray(session.maxPlan?.sensitivity)
+    ? session.maxPlan.sensitivity
+    : [];
+  const bidMode = session.bidMode === "kg" ? "kg" : "total";
+  return {
+    version: normalizeNumber(session.version) || 1,
+    sourceLiquidacionId: normalizeString(session.sourceLiquidacionId),
+    resultLiquidacionId: normalizeString(session.resultLiquidacionId),
+    status: normalizeString(session.status),
+    plannedAt: normalizeString(session.plannedAt),
+    startedAt: normalizeString(session.startedAt),
+    finishedAt: normalizeString(session.finishedAt),
+    bidMode,
+    bidLabel: normalizeString(session.bidLabel) || (bidMode === "kg" ? "kg" : "lote"),
+    unitSuffix: normalizeString(session.unitSuffix),
+    bidQuantity: normalizeNumber(session.bidQuantity),
+    startSnapshot: normalizeSnapshot(session.startSnapshot),
+    maxPlan: session.maxPlan && typeof session.maxPlan === "object"
+      ? {
+          capturedAt: normalizeString(session.maxPlan.capturedAt),
+          bidMode: session.maxPlan.bidMode === "kg" ? "kg" : "total",
+          bidLabel: normalizeString(session.maxPlan.bidLabel) || "lote",
+          unitSuffix: normalizeString(session.maxPlan.unitSuffix),
+          bidQuantity: normalizeNumber(session.maxPlan.bidQuantity),
+          currentOfferValue: normalizeNumber(session.maxPlan.currentOfferValue),
+          currentOfferTotal: normalizeNumber(session.maxPlan.currentOfferTotal),
+          incrementValue: normalizeNumber(session.maxPlan.incrementValue),
+          incrementTotal: normalizeNumber(session.maxPlan.incrementTotal),
+          utilidadMinPct: normalizeNumber(session.maxPlan.utilidadMinPct),
+          utilidadMinKg: normalizeNumber(session.maxPlan.utilidadMinKg),
+          utilidadMinTotal: normalizeNumber(session.maxPlan.utilidadMinTotal),
+          cajaMaxima: normalizeNumber(session.maxPlan.cajaMaxima),
+          recommendedBidValue: normalizeNumber(session.maxPlan.recommendedBidValue),
+          recommendedBidTotal: normalizeNumber(session.maxPlan.recommendedBidTotal),
+          hasAnyRule: Boolean(session.maxPlan.hasAnyRule),
+          hasViableMaximum: Boolean(session.maxPlan.hasViableMaximum),
+          currentStatus: Boolean(session.maxPlan.currentStatus),
+          nextStatus: Boolean(session.maxPlan.nextStatus),
+          recommendedSnapshot: normalizeSnapshot(session.maxPlan.recommendedSnapshot),
+          currentSnapshot: normalizeSnapshot(session.maxPlan.currentSnapshot),
+          nextSnapshot: normalizeSnapshot(session.maxPlan.nextSnapshot),
+          sensitivity: safeSensitivity.map(normalizeSnapshot).filter(Boolean)
+        }
+      : null,
+    bids: safeBids.map(normalizeSnapshot).filter(Boolean),
+    finalSnapshot: normalizeSnapshot(session.finalSnapshot)
   };
 }
 
@@ -140,8 +235,16 @@ function normalizePayload(payload) {
       incluirHabilitacion: Boolean(calculation.incluirHabilitacion),
       incluirDepositoGarantiaEnDesembolso:
         calculation.incluirDepositoGarantiaEnDesembolso !== false,
+      incluirColchonPrepago: calculation.incluirColchonPrepago !== false,
+      unidadMedidaSyc:
+        calculation.unidadMedidaSyc === "unidad" ? "unidad" : "kg",
       causaIvaValorAdjudicado:
-        calculation.causaIvaValorAdjudicado === "si" ? "si" : "no",
+        ["si", "incluido"].includes(calculation.causaIvaValorAdjudicado)
+          ? calculation.causaIvaValorAdjudicado
+          : "no",
+      ivaValorAdjudicadoRecuperable: Boolean(
+        calculation.ivaValorAdjudicadoRecuperable
+      ),
       acompanamientoUbicacion: normalizeString(
         calculation.acompanamientoUbicacion
       ),
@@ -168,6 +271,7 @@ function normalizePayload(payload) {
     adminRangesSyc: Array.isArray(safe.adminRangesSyc)
       ? safe.adminRangesSyc.map(normalizeRange)
       : [],
+    auctionSession: normalizeAuctionSession(safe.auctionSession),
     breakdown: {
       auctionHouse:
         breakdown.auctionHouse === "subastas_y_comercio"
@@ -180,7 +284,19 @@ function normalizePayload(payload) {
       valorBaseLote: normalizeNumber(breakdown.valorBaseLote),
       totalPagosSuperbid: normalizeNumber(breakdown.totalPagosSuperbid),
       totalGastosOperativos: normalizeNumber(breakdown.totalGastosOperativos),
+      ivaMaterialModo: ["si", "incluido"].includes(breakdown.ivaMaterialModo)
+        ? breakdown.ivaMaterialModo
+        : "no",
       ivaValorAdjudicado: normalizeNumber(breakdown.ivaValorAdjudicado),
+      ivaValorAdjudicadoCosto: normalizeNumber(
+        breakdown.ivaValorAdjudicadoCosto
+      ),
+      ivaValorAdjudicadoIncluido: normalizeNumber(
+        breakdown.ivaValorAdjudicadoIncluido
+      ),
+      devolucionIvaValorAdjudicado: normalizeNumber(
+        breakdown.devolucionIvaValorAdjudicado
+      ),
       comisionBase: normalizeNumber(breakdown.comisionBase),
       ivaSobreComision: normalizeNumber(breakdown.ivaSobreComision),
       comisionTotal: normalizeNumber(breakdown.comisionTotal),
@@ -196,6 +312,16 @@ function normalizePayload(payload) {
       cajaTemporal: normalizeNumber(breakdown.cajaTemporal),
       costoNetoFinal: normalizeNumber(breakdown.costoNetoFinal),
       prepagoTotal: normalizeNumber(breakdown.prepagoTotal),
+      totalInversion: normalizeNumber(breakdown.totalInversion),
+      totalInversionConGarantia: normalizeNumber(
+        breakdown.totalInversionConGarantia
+      ),
+      aprovechableTotal: normalizeNumber(breakdown.aprovechableTotal),
+      precioVentaKg: normalizeNumber(breakdown.precioVentaKg),
+      costoAprovechableKg: normalizeNumber(breakdown.costoAprovechableKg),
+      utilidadKg: normalizeNumber(breakdown.utilidadKg),
+      utilidadPct: normalizeNumber(breakdown.utilidadPct),
+      utilidadTotal: normalizeNumber(breakdown.utilidadTotal),
       totalDesembolso: normalizeNumber(breakdown.totalDesembolso),
       costoTotalEstimadoNegocio: normalizeNumber(
         breakdown.costoTotalEstimadoNegocio
@@ -352,6 +478,36 @@ app.put("/api/liquidaciones/:id", async (req, res, next) => {
       return res.status(404).json({ message: "Liquidacion no encontrada" });
     }
     res.json(updated);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.patch("/api/liquidaciones/:id/auction-session", async (req, res, next) => {
+  try {
+    const hasExplicitSession = Object.prototype.hasOwnProperty.call(
+      req.body || {},
+      "auctionSession"
+    );
+    const updated = await Liquidacion.findByIdAndUpdate(
+      req.params.id,
+      {
+        auctionSession: normalizeAuctionSession(
+          hasExplicitSession ? req.body.auctionSession : req.body
+        )
+      },
+      { new: true, runValidators: true }
+    ).lean();
+
+    if (!updated) {
+      return res.status(404).json({ message: "Liquidacion no encontrada" });
+    }
+
+    res.json({
+      message: "Sesion de subasta actualizada",
+      id: req.params.id,
+      auctionSession: updated.auctionSession || null
+    });
   } catch (error) {
     next(error);
   }

@@ -26,7 +26,12 @@ const CalculationLotSchema = new mongoose.Schema(
     tipoCalculo: { type: String, enum: ["total", "kg"], default: "total" },
     valorAdjudicado: { type: Number, default: 0 },
     valorBaseLote: { type: Number, default: 0 },
+    depositoGarantia: { type: Number, default: 0 },
     kilosEstimados: { type: Number, default: 0 },
+    pesoUnitarioKg: { type: Number, default: 0 },
+    aprovechableModo: { type: String, enum: ["kg", "pct"], default: "kg" },
+    aprovechableValor: { type: Number, default: 0 },
+    precioVentaKg: { type: Number, default: 0 },
     valorPorKilo: { type: Number, default: 0 }
   },
   { _id: false }
@@ -75,11 +80,18 @@ const CalculationSchema = new mongoose.Schema(
     },
     incluirHabilitacion: { type: Boolean, default: false },
     incluirDepositoGarantiaEnDesembolso: { type: Boolean, default: true },
+    incluirColchonPrepago: { type: Boolean, default: true },
+    unidadMedidaSyc: {
+      type: String,
+      enum: ["kg", "unidad"],
+      default: "kg"
+    },
     causaIvaValorAdjudicado: {
       type: String,
-      enum: ["si", "no"],
+      enum: ["si", "no", "incluido"],
       default: "no"
     },
+    ivaValorAdjudicadoRecuperable: { type: Boolean, default: false },
     acompanamientoUbicacion: { type: String, default: "" },
     acompanamientoDias: { type: Number, default: 1 },
     porcentajePrepagoAdicional: { type: Number, default: 0.2 },
@@ -107,7 +119,11 @@ const BreakdownSchema = new mongoose.Schema(
     valorBaseLote: { type: Number, default: 0 },
     totalPagosSuperbid: { type: Number, default: 0 },
     totalGastosOperativos: { type: Number, default: 0 },
+    ivaMaterialModo: { type: String, default: "no" },
     ivaValorAdjudicado: { type: Number, default: 0 },
+    ivaValorAdjudicadoCosto: { type: Number, default: 0 },
+    ivaValorAdjudicadoIncluido: { type: Number, default: 0 },
+    devolucionIvaValorAdjudicado: { type: Number, default: 0 },
     comisionBase: { type: Number, default: 0 },
     ivaSobreComision: { type: Number, default: 0 },
     comisionTotal: { type: Number, default: 0 },
@@ -123,6 +139,14 @@ const BreakdownSchema = new mongoose.Schema(
     cajaTemporal: { type: Number, default: 0 },
     costoNetoFinal: { type: Number, default: 0 },
     prepagoTotal: { type: Number, default: 0 },
+    totalInversion: { type: Number, default: 0 },
+    totalInversionConGarantia: { type: Number, default: 0 },
+    aprovechableTotal: { type: Number, default: 0 },
+    precioVentaKg: { type: Number, default: 0 },
+    costoAprovechableKg: { type: Number, default: 0 },
+    utilidadKg: { type: Number, default: 0 },
+    utilidadPct: { type: Number, default: 0 },
+    utilidadTotal: { type: Number, default: 0 },
     totalDesembolso: { type: Number, default: 0 },
     costoTotalEstimadoNegocio: { type: Number, default: 0 },
     porcentajeRealCostos: { type: Number, default: 0 },
@@ -136,6 +160,13 @@ const BreakdownSchema = new mongoose.Schema(
             valorAdjudicado: { type: Number, default: 0 },
             valorBaseLote: { type: Number, default: 0 },
             kilosEstimados: { type: Number, default: 0 },
+            cantidadUnidades: { type: Number, default: 0 },
+            pesoUnitarioKg: { type: Number, default: 0 },
+            pesoTotalKg: { type: Number, default: 0 },
+            aprovechableModo: { type: String, default: "kg" },
+            aprovechableValor: { type: Number, default: 0 },
+            aprovechableCantidad: { type: Number, default: 0 },
+            precioVentaKg: { type: Number, default: 0 },
             valorPorKilo: { type: Number, default: 0 },
             prepago: { type: Number, default: 0 },
             comisionBase: { type: Number, default: 0 },
@@ -154,6 +185,79 @@ const BreakdownSchema = new mongoose.Schema(
   { _id: false }
 );
 
+const AuctionSnapshotSchema = new mongoose.Schema(
+  {
+    kind: { type: String, default: "" },
+    at: { type: String, default: "" },
+    bidder: { type: String, default: "" },
+    bidMode: { type: String, enum: ["kg", "total"], default: "total" },
+    bidLabel: { type: String, default: "lote" },
+    bidValue: { type: Number, default: 0 },
+    bidTotal: { type: Number, default: 0 },
+    maxBidValue: { type: Number, default: 0 },
+    maxBidTotal: { type: Number, default: 0 },
+    frozenDeposit: { type: Number, default: 0 },
+    costPerUnit: { type: Number, default: 0 },
+    utilityPct: { type: Number, default: 0 },
+    utilityKg: { type: Number, default: 0 },
+    utilityTotal: { type: Number, default: 0 },
+    cashWithoutDeposit: { type: Number, default: 0 },
+    totalWithDeposit: { type: Number, default: 0 },
+    status: { type: String, default: "" }
+  },
+  { _id: false }
+);
+
+const AuctionMaxPlanSchema = new mongoose.Schema(
+  {
+    capturedAt: { type: String, default: "" },
+    bidMode: { type: String, enum: ["kg", "total"], default: "total" },
+    bidLabel: { type: String, default: "lote" },
+    unitSuffix: { type: String, default: "" },
+    bidQuantity: { type: Number, default: 0 },
+    currentOfferValue: { type: Number, default: 0 },
+    currentOfferTotal: { type: Number, default: 0 },
+    incrementValue: { type: Number, default: 0 },
+    incrementTotal: { type: Number, default: 0 },
+    utilidadMinPct: { type: Number, default: 0 },
+    utilidadMinKg: { type: Number, default: 0 },
+    utilidadMinTotal: { type: Number, default: 0 },
+    cajaMaxima: { type: Number, default: 0 },
+    recommendedBidValue: { type: Number, default: 0 },
+    recommendedBidTotal: { type: Number, default: 0 },
+    hasAnyRule: { type: Boolean, default: false },
+    hasViableMaximum: { type: Boolean, default: false },
+    currentStatus: { type: Boolean, default: false },
+    nextStatus: { type: Boolean, default: false },
+    recommendedSnapshot: { type: AuctionSnapshotSchema, default: null },
+    currentSnapshot: { type: AuctionSnapshotSchema, default: null },
+    nextSnapshot: { type: AuctionSnapshotSchema, default: null },
+    sensitivity: { type: [AuctionSnapshotSchema], default: [] }
+  },
+  { _id: false }
+);
+
+const AuctionSessionSchema = new mongoose.Schema(
+  {
+    version: { type: Number, default: 1 },
+    sourceLiquidacionId: { type: String, default: "" },
+    resultLiquidacionId: { type: String, default: "" },
+    status: { type: String, default: "" },
+    plannedAt: { type: String, default: "" },
+    startedAt: { type: String, default: "" },
+    finishedAt: { type: String, default: "" },
+    bidMode: { type: String, enum: ["kg", "total"], default: "total" },
+    bidLabel: { type: String, default: "lote" },
+    unitSuffix: { type: String, default: "" },
+    bidQuantity: { type: Number, default: 0 },
+    startSnapshot: { type: AuctionSnapshotSchema, default: null },
+    maxPlan: { type: AuctionMaxPlanSchema, default: null },
+    bids: { type: [AuctionSnapshotSchema], default: [] },
+    finalSnapshot: { type: AuctionSnapshotSchema, default: null }
+  },
+  { _id: false }
+);
+
 const LiquidacionSchema = new mongoose.Schema(
   {
     general: { type: GeneralSchema, default: () => ({}) },
@@ -162,6 +266,7 @@ const LiquidacionSchema = new mongoose.Schema(
     logisticsItems: { type: [LogisticsItemSchema], default: [] },
     adminRanges: { type: [AdminRangeSchema], default: [] },
     adminRangesSyc: { type: [AdminRangeSchema], default: [] },
+    auctionSession: { type: AuctionSessionSchema, default: null },
     breakdown: { type: BreakdownSchema, default: () => ({}) },
     deletedAt: { type: Date, default: null },
     purgeAt: { type: Date, default: null }

@@ -84,6 +84,102 @@ function roundMoney(value) {
   return Math.round((numeric + Number.EPSILON) * 100) / 100;
 }
 
+function roundPercent(value) {
+  return Math.round((toNumber(value) + Number.EPSILON) * 100) / 100;
+}
+
+function buildMetricDriver(type, label, latestValue, previousValue, extra = {}) {
+  const latestNumber = toNumber(latestValue);
+  const previousNumber = toNumber(previousValue);
+  if (!previousNumber && !latestNumber) {
+    return null;
+  }
+
+  const valueDiff = roundMoney(latestNumber - previousNumber);
+  const percentDiff = previousNumber ? roundPercent((valueDiff / previousNumber) * 100) : null;
+  return {
+    type,
+    label,
+    previousValue: previousNumber,
+    latestValue: latestNumber,
+    valueDiff,
+    percentDiff,
+    direction: valueDiff > 0 ? "up" : valueDiff < 0 ? "down" : "flat",
+    ...extra
+  };
+}
+
+function weightedLmeValue(result) {
+  return (result?.items || []).reduce((total, item) => {
+    const weight = toNumber(item.recognizedPct ?? item.spectPct);
+    return total + toNumber(item.lmeUsdT) * weight;
+  }, 0);
+}
+
+function effectiveCopPerUsd(result) {
+  if (result?.conversionMode === "usd_cop") {
+    return toNumber(result?.rates?.usdToCop);
+  }
+
+  const eurCop = toNumber(result?.rates?.eurCop);
+  const eurUsd = toNumber(result?.rates?.eurUsd);
+  return eurCop && eurUsd ? eurCop / eurUsd : toNumber(result?.rates?.usdToCop);
+}
+
+function changedLmeMetals(latest, previous) {
+  const previousByKey = new Map(
+    (previous?.items || []).map((item) => [
+      item.lmeMetalKey || item.symbol || item.metalName,
+      item
+    ])
+  );
+
+  return (latest?.items || [])
+    .map((item) => {
+      const key = item.lmeMetalKey || item.symbol || item.metalName;
+      const previousItem = previousByKey.get(key);
+      if (!previousItem) {
+        return null;
+      }
+      const previousValue = toNumber(previousItem.lmeUsdT);
+      const latestValue = toNumber(item.lmeUsdT);
+      const valueDiff = roundMoney(latestValue - previousValue);
+      if (!valueDiff) {
+        return null;
+      }
+      return {
+        metalName: item.metalName,
+        symbol: item.symbol || "",
+        previousValue,
+        latestValue,
+        valueDiff,
+        percentDiff: previousValue ? roundPercent((valueDiff / previousValue) * 100) : null
+      };
+    })
+    .filter(Boolean)
+    .sort((first, second) => Math.abs(second.valueDiff) - Math.abs(first.valueDiff))
+    .slice(0, 3);
+}
+
+function buildResultDrivers(latest, previous) {
+  if (!latest || !previous) {
+    return [];
+  }
+
+  const drivers = [
+    buildMetricDriver("lme", "LME", weightedLmeValue(latest), weightedLmeValue(previous), {
+      metals: changedLmeMetals(latest, previous)
+    }),
+    buildMetricDriver("trm", "TRM", effectiveCopPerUsd(latest), effectiveCopPerUsd(previous), {
+      conversionMode: latest.conversionMode
+    }),
+    buildMetricDriver("payment", "Pago cliente", latest.clientPaymentPct, previous.clientPaymentPct),
+    buildMetricDriver("composition", "Composición", latest.totalRecognizedPct, previous.totalRecognizedPct)
+  ].filter(Boolean);
+
+  return drivers.sort((first, second) => Math.abs(second.percentDiff || 0) - Math.abs(first.percentDiff || 0));
+}
+
 function buildResultChange(latest, previous) {
   const latestValue = toNumber(latest?.paymentPriceCopKg);
   const previousValue = toNumber(previous?.paymentPriceCopKg);
@@ -92,13 +188,19 @@ function buildResultChange(latest, previous) {
   }
 
   const valueDiff = roundMoney(latestValue - previousValue);
-  const percentDiff = roundMoney((valueDiff / previousValue) * 100);
+  const percentDiff = roundPercent((valueDiff / previousValue) * 100);
+  const drivers = buildResultDrivers(latest, previous);
+  const activeDrivers = drivers.filter((driver) => Math.abs(driver.valueDiff || 0) > 0);
+  const primaryDriver = activeDrivers[0] || null;
   return {
     previousResultId: previous.id,
     previousValue,
     valueDiff,
     percentDiff,
-    direction: valueDiff > 0 ? "up" : valueDiff < 0 ? "down" : "flat"
+    direction: valueDiff > 0 ? "up" : valueDiff < 0 ? "down" : "flat",
+    primaryCause: primaryDriver?.type || "none",
+    primaryCauseLabel: primaryDriver?.label || "Sin cambio relevante",
+    drivers
   };
 }
 
@@ -557,13 +659,16 @@ async function listMaterialSummaries({ includeInactive = false } = {}) {
   const latestByMaterial = new Map(
     latestRows.map((row) => {
       const latest = mapResult(row);
-      latest.priceChange = buildResultChange(latest, previousByMaterial.get(Number(row.material_id)));
       return [Number(row.material_id), latest];
     })
   );
 
-  if (latestRows.length > 0) {
-    const resultIds = latestRows.map((row) => row.id);
+  if (resultRows.length > 0) {
+    const resultsById = new Map([
+      ...Array.from(latestByMaterial.values()).map((result) => [Number(result.id), result]),
+      ...Array.from(previousByMaterial.values()).map((result) => [Number(result.id), result])
+    ]);
+    const resultIds = Array.from(resultsById.keys());
     const [itemRows] = await pool.query(
       `SELECT *
          FROM alloy_liquidation_result_items
@@ -572,30 +677,29 @@ async function listMaterialSummaries({ includeInactive = false } = {}) {
       [resultIds]
     );
     for (const row of itemRows) {
-      const materialResult = latestRows.find((result) => result.id === row.result_id);
-      if (!materialResult) {
-        continue;
-      }
-      const latest = latestByMaterial.get(Number(materialResult.material_id));
-      if (latest) {
-        latest.items.push({
-          id: row.id,
-          resultId: row.result_id,
-          metalName: row.metal_name,
-          symbol: row.symbol || "",
-          lmeMetalKey: row.lme_metal_key || "",
-          spectPct: row.spect_pct,
-          paidPct: row.paid_pct,
-          lmeUsdT: row.lme_usd_t,
-          usdKg: row.usd_kg,
-          eurKg: row.eur_kg,
-          copKg: row.cop_kg,
-          recognizedPct: row.recognized_pct,
-          baseValueCopKg: row.base_value_cop_kg,
-          recognizedValueCopKg: row.recognized_value_cop_kg,
-          displayOrder: row.display_order
-        });
-      }
+      const result = resultsById.get(Number(row.result_id));
+      if (!result) continue;
+      result.items.push({
+        id: row.id,
+        resultId: row.result_id,
+        metalName: row.metal_name,
+        symbol: row.symbol || "",
+        lmeMetalKey: row.lme_metal_key || "",
+        spectPct: row.spect_pct,
+        paidPct: row.paid_pct,
+        lmeUsdT: row.lme_usd_t,
+        usdKg: row.usd_kg,
+        eurKg: row.eur_kg,
+        copKg: row.cop_kg,
+        recognizedPct: row.recognized_pct,
+        baseValueCopKg: row.base_value_cop_kg,
+        recognizedValueCopKg: row.recognized_value_cop_kg,
+        displayOrder: row.display_order
+      });
+    }
+
+    for (const [materialId, latest] of latestByMaterial.entries()) {
+      latest.priceChange = buildResultChange(latest, previousByMaterial.get(materialId));
     }
   }
 
