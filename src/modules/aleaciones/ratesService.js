@@ -2,9 +2,11 @@ const crypto = require("crypto");
 const { getAleacionesPool } = require("./db");
 const { normalizeRates } = require("./calculator");
 
+const DEFAULT_TRM_URL =
+  "https://www.datos.gov.co/resource/32sa-8pi3.json?%24limit=1&%24order=vigenciadesde%20DESC";
 const TRM_URL =
   process.env.ALEACIONES_TRM_URL ||
-  "https://www.datos.gov.co/resource/32sa-8pi3.json?$limit=1&$order=vigenciadesde%20DESC";
+  DEFAULT_TRM_URL;
 const ECB_URL =
   process.env.ALEACIONES_ECB_URL ||
   "https://www.ecb.europa.eu/stats/eurofxref/eurofxref-daily.xml";
@@ -153,7 +155,16 @@ function parseDate(value) {
 }
 
 async function fetchUsdCopFromSuperfinanciera() {
-  const data = await fetchJson(TRM_URL, "TRM oficial USD/COP");
+  let data;
+  try {
+    data = await fetchJson(TRM_URL, "TRM oficial USD/COP");
+  } catch (error) {
+    if (TRM_URL !== DEFAULT_TRM_URL && /HTTP 400/.test(error.message)) {
+      data = await fetchJson(DEFAULT_TRM_URL, "TRM oficial USD/COP");
+    } else {
+      throw error;
+    }
+  }
   const row = Array.isArray(data) ? data[0] : data;
   const usdToCop = Number(row?.valor);
 
