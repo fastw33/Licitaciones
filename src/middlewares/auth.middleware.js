@@ -1,5 +1,12 @@
 const jwt = require("jsonwebtoken");
 
+function parseCsvEnv(value) {
+  return String(value || "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
 function getBearerToken(req) {
   const authHeader = req.headers.authorization || "";
   if (!authHeader.startsWith("Bearer ")) {
@@ -10,6 +17,11 @@ function getBearerToken(req) {
 
 function authMiddleware(req, res, next) {
   if (req.method === "OPTIONS") {
+    return next();
+  }
+
+  const publicPaths = parseCsvEnv(process.env.AUTH_PUBLIC_PATHS);
+  if (publicPaths.includes(req.path)) {
     return next();
   }
 
