@@ -7,7 +7,7 @@ const Liquidacion = require("./models/Liquidacion");
 const authMiddleware = require("./middlewares/auth.middleware");
 const { getLmePrices } = require("./services/lmeService");
 const aleacionesRoutes = require("./modules/aleaciones/routes");
-const { initAleacionesDb } = require("./modules/aleaciones/db");
+const { config: aleacionesDbConfig, getAleacionesPool, initAleacionesDb } = require("./modules/aleaciones/db");
 const { startAutoPriceUpdater } = require("./modules/aleaciones/autoUpdater");
 const {
   DEFAULT_ADMIN_RANGES,
@@ -389,7 +389,7 @@ function buildHistoryFilter(status, search) {
   return filter;
 }
 
-app.get("/api/health", (req, res) => {
+async function checkMongoHealth() {
   const states = {
     0: "desconectado",
     1: "conectado",
@@ -397,11 +397,63 @@ app.get("/api/health", (req, res) => {
     3: "desconectando"
   };
 
-  res.json({
+  const state = states[mongoose.connection.readyState] || "desconocido";
+  if (mongoose.connection.readyState !== 1 || !mongoose.connection.db) {
+    return { ok: false, state, database: mongoose.connection.name || "Licitaciones" };
+  }
+
+  await mongoose.connection.db.admin().ping();
+  return { ok: true, state, database: mongoose.connection.name || "Licitaciones" };
+}
+
+async function checkMysqlHealth() {
+  const pool = getAleacionesPool();
+  await pool.query("SELECT 1");
+
+  const [lmeDatabaseRows] = await pool.query(
+    "SELECT SCHEMA_NAME FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME = ?",
+    [aleacionesDbConfig.lmeDatabase]
+  );
+
+  return {
+    ok: true,
+    database: aleacionesDbConfig.database,
+    lmeDatabase: aleacionesDbConfig.lmeDatabase,
+    lmeDatabaseAvailable: lmeDatabaseRows.length > 0
+  };
+}
+
+app.get("/api/health", async (req, res) => {
+  const health = {
     ok: true,
     service: "liquidador-licitaciones-backend",
-    mongodb: states[mongoose.connection.readyState] || "desconocido"
-  });
+    mongodb: null,
+    mysql: null
+  };
+
+  try {
+    health.mongodb = await checkMongoHealth();
+  } catch (error) {
+    health.mongodb = {
+      ok: false,
+      database: mongoose.connection.name || "Licitaciones",
+      detail: error.message
+    };
+  }
+
+  try {
+    health.mysql = await checkMysqlHealth();
+  } catch (error) {
+    health.mysql = {
+      ok: false,
+      database: aleacionesDbConfig.database,
+      lmeDatabase: aleacionesDbConfig.lmeDatabase,
+      detail: error.message
+    };
+  }
+
+  health.ok = Boolean(health.mongodb?.ok && health.mysql?.ok && health.mysql?.lmeDatabaseAvailable);
+  res.status(health.ok ? 200 : 503).json(health);
 });
 
 app.get("/api/defaults", (req, res) => {
