@@ -22,10 +22,37 @@ const MONGODB_URI =
   "mongodb://127.0.0.1:27017/Licitaciones";
 const TRASH_RETENTION_DAYS = 30;
 
+function parseCsvEnv(value) {
+  return String(value || "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function parseBooleanEnv(value) {
+  return ["1", "true", "yes", "si"].includes(String(value || "").toLowerCase());
+}
+
+function buildCorsOptions() {
+  const allowedOrigins = parseCsvEnv(process.env.CORS_ORIGINS);
+  const allowedMethods = parseCsvEnv(process.env.CORS_ALLOW_METHODS);
+  const allowedHeaders = parseCsvEnv(process.env.CORS_ALLOW_HEADERS);
+
+  return {
+    origin(origin, callback) {
+      if (!origin || allowedOrigins.includes("*") || allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+      return callback(null, false);
+    },
+    credentials: parseBooleanEnv(process.env.CORS_ALLOW_CREDENTIALS),
+    methods: allowedMethods.length ? allowedMethods : undefined,
+    allowedHeaders: allowedHeaders.length ? allowedHeaders : undefined
+  };
+}
+
 app.use(
-  cors({
-    allowedHeaders: ["Content-Type", "Authorization", "X-Internal-Service-Key"],
-  })
+  cors(buildCorsOptions())
 );
 app.use(express.json({ limit: "2mb" }));
 app.use(authMiddleware);
